@@ -42,6 +42,8 @@ enum LanguageContainer {
   COMPRESSING,
   HASHING,
   REFRESHING,
+  SENDING,
+  RECEIVING,
 
   // Audio player strings
   TITLE,
@@ -78,6 +80,8 @@ enum LanguageContainer {
   RENAME,
   NEW_FOLDER,
   PROPERTIES,
+  SEND,
+  RECEIVE,
   MORE,
   COMPRESS,
   INSTALL_ALL,
@@ -193,6 +197,12 @@ enum LanguageContainer {
   QR_SHOW_CONTENTS,
   QR_CONFIRM_INSTALL,
   QR_CONFIRM_DOWNLOAD,
+
+  // Adhoc strings
+  ADHOC_RECEIVE_SEARCHING_PSVITA,
+  ADHOC_SELECT_PSVITA,
+  ADHOC_RECEIVE_QUESTION,
+  ADHOC_CLIENT_DECLINED,
 
   // Others
   IMC0_MOUNTED,

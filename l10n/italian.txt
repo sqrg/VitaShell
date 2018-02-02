@@ -23,6 +23,8 @@ EXTRACTING                           = "Estrazione..."
 COMPRESSING                          = "Compressione..."
 HASHING                              = "Hash in corso..."
 REFRESHING                           = "Aggiornamento in corso..."
+SENDING                              = "Invio in corso..."
+RECEIVING                            = "Ricezione file in corso..."
 
 # Audio player strings
 TITLE                                = "Titolo"
@@ -59,6 +61,8 @@ DELETE                               = "Elimina"
 RENAME                               = "Rinomina"
 NEW_FOLDER                           = "Nuova cartella"
 PROPERTIES                           = "Proprietà"
+SEND                                 = "Invia"
+RECEIVE                              = "Ricevi"
 MORE                                 = "Altro"
 COMPRESS                             = "Comprimi"
 INSTALL_ALL                          = "Installa tutti"
@@ -175,6 +179,12 @@ QR_SHOW_CONTENTS                    = "QR Code dice:\%s"
 QR_CONFIRM_INSTALL                  = "Vuoi installare questo pacchetto:\%s\File: %s\Dimensione: %s"
 QR_CONFIRM_DOWNLOAD                 = "Vuoi scaricare questo file:\%s\File: %s\Dimensione: %s"
 
+# Adhoc strings
+ADHOC_RECEIVE_SEARCHING_PSVITA       = "Ricerca in corso di una PS Vita per la ricezione dei file... \Attendere prego."
+ADHOC_SELECT_PSVITA                  = "Seleziona una PS Vita:"
+ADHOC_RECEIVE_QUESTION               = "Vuoi ricevere da %s?"
+ADHOC_CLIENT_DECLINED                = "Il client ha rifiutato la tua richiesta."
+
 # Others
 IMC0_MOUNTED                         = "imc0: montato."
 SAFE_MODE                            = "MODALITÀ SICURA"
@@ -190,3 +200,4 @@ FTP_SERVER                           = "Il server FTP è ora attivo all'indirizz
 UPDATE_QUESTION                      = "VitaShell %s è disponibile.\\Vuoi aggiornare l'applicazione?"
 ARCHIVE_NAME                         = "Nome archivio"
 COMPRESSION_LEVEL                    = "Livello di compressione (0-9)"
+ENTER_PASSWORD                       = "Inserire password"

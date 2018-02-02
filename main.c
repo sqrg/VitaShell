@@ -33,8 +33,10 @@
 #include "text.h"
 #include "hex.h"
 #include "settings.h"
+#include "adhoc_dialog.h"
 #include "property_dialog.h"
 #include "message_dialog.h"
+#include "netcheck_dialog.h"
 #include "ime_dialog.h"
 #include "theme.h"
 #include "language.h"
@@ -218,6 +220,9 @@ int refreshFileList() {
 }
 
 static void refreshMarkList() {
+  if (isInArchive())
+    return;
+  
   FileListEntry *entry = mark_list.head;
 
   int length = mark_list.length;
@@ -242,6 +247,9 @@ static void refreshMarkList() {
 }
 
 static void refreshCopyList() {
+  if (copy_list.is_in_archive)
+    return;
+  
   FileListEntry *entry = copy_list.head;
 
   int length = copy_list.length;
@@ -257,8 +265,7 @@ static void refreshCopyList() {
     // Check if the entry still exits. If not, remove it from list
     SceIoStat stat;
     memset(&stat, 0, sizeof(SceIoStat));
-    int res = sceIoGetstat(path, &stat);
-    if (res < 0 && res != 0x80010014)
+    if (sceIoGetstat(path, &stat) < 0)
       fileListRemoveEntry(&copy_list, entry);
 
     // Next
@@ -509,10 +516,10 @@ static int dialogSteps() {
   int refresh = REFRESH_MODE_NONE;
 
   int msg_result = updateMessageDialog();
+  int netcheck_result = updateNetCheckDialog();
   int ime_result = updateImeDialog();
 
   switch (getDialogStep()) {
-    // Without refresh
     case DIALOG_STEP_ERROR:
     case DIALOG_STEP_INFO:
     case DIALOG_STEP_SYSTEM:
@@ -526,7 +533,7 @@ static int dialogSteps() {
       break;
     }
     
-    case DIALOG_STEP_CANCELLED:
+    case DIALOG_STEP_CANCELED:
       refresh = REFRESH_MODE_NORMAL;
       setDialogStep(DIALOG_STEP_NONE);
       break;
@@ -1063,7 +1070,7 @@ static int dialogSteps() {
       if (msg_result == MESSAGE_DIALOG_RESULT_YES) {
         setDialogStep(DIALOG_STEP_INSTALL_WARNING_AGREED);
       } else if (msg_result == MESSAGE_DIALOG_RESULT_NO) {
-        setDialogStep(DIALOG_STEP_CANCELLED);
+        setDialogStep(DIALOG_STEP_CANCELED);
       }
 
       break;
@@ -1273,6 +1280,165 @@ static int dialogSteps() {
 
       break;
     }
+    
+    case DIALOG_STEP_ADHOC_SEND_NETCHECK:
+    {
+      if (netcheck_result == NETCHECK_DIALOG_RESULT_CONNECTED) {
+        initAdhocDialog();
+        setDialogStep(DIALOG_STEP_NONE);
+      } else if (netcheck_result == NETCHECK_DIALOG_RESULT_NOT_CONNECTED) {
+        setDialogStep(DIALOG_STEP_NONE);
+      }
+      
+      break;
+    }
+    
+    case DIALOG_STEP_ADHOC_SEND_WAITING:
+    {
+      if (msg_result == MESSAGE_DIALOG_RESULT_RUNNING) {
+        // Wait for a response, then close
+        if (strcmp(adhocReceiveClientReponse(), "YES") == 0 ||
+            strcmp(adhocReceiveClientReponse(), "NO") == 0) {
+          sceMsgDialogClose();
+        }
+      } else if (msg_result == MESSAGE_DIALOG_RESULT_FINISHED) {
+        if (strcmp(adhocReceiveClientReponse(), "YES") == 0) {
+          SendArguments args;
+          args.file_list = &file_list;
+          args.mark_list = &mark_list;
+          args.index = base_pos + rel_pos;
+
+          initMessageDialog(MESSAGE_DIALOG_PROGRESS_BAR, language_container[SENDING]);
+          setDialogStep(DIALOG_STEP_ADHOC_SENDING);
+
+          SceUID thid = sceKernelCreateThread("send_thread", (SceKernelThreadEntry)send_thread, 0x40, 0x100000, 0, 0, NULL);
+          if (thid >= 0)
+            sceKernelStartThread(thid, sizeof(SendArguments), &args);
+        } else if (strcmp(adhocReceiveClientReponse(), "NO") == 0) {
+          initMessageDialog(SCE_MSG_DIALOG_BUTTON_TYPE_CANCEL, language_container[ADHOC_CLIENT_DECLINED]);
+          setDialogStep(DIALOG_STEP_ADHOC_SEND_CLIENT_DECLINED);
+        } else {
+          // Return to select menu
+          adhocCloseSockets();
+          initAdhocDialog();
+          setDialogStep(DIALOG_STEP_NONE);
+        }
+      }
+      
+      break;
+    }
+    
+    case DIALOG_STEP_ADHOC_SEND_CLIENT_DECLINED:
+    {
+      if (msg_result == MESSAGE_DIALOG_RESULT_FINISHED) {
+        // Return to select menu
+        adhocCloseSockets();
+        initAdhocDialog();
+        setDialogStep(DIALOG_STEP_NONE);
+      }
+      
+      break;
+    }
+    
+    case DIALOG_STEP_ADHOC_RECEIVE_NETCHECK:
+    {
+      if (netcheck_result == NETCHECK_DIALOG_RESULT_CONNECTED) {
+        adhocWaitingForServerRequest();
+        initMessageDialog(SCE_MSG_DIALOG_BUTTON_TYPE_CANCEL, language_container[ADHOC_RECEIVE_SEARCHING_PSVITA]);
+        setDialogStep(DIALOG_STEP_ADHOC_RECEIVE_SEARCHING);
+      } else if (netcheck_result == NETCHECK_DIALOG_RESULT_NOT_CONNECTED) {
+        setDialogStep(DIALOG_STEP_NONE);
+      }
+      
+      break;
+    }
+    
+    case DIALOG_STEP_ADHOC_RECEIVE_SEARCHING:
+    {
+      if (msg_result == MESSAGE_DIALOG_RESULT_RUNNING) {
+        // Wait for a request, then close
+        if (adhocReceiveServerRequest() == 1) {
+          sceMsgDialogClose();
+        }
+      } else if (msg_result == MESSAGE_DIALOG_RESULT_FINISHED) {
+        // If the dialog is closed and we got a request, go to question state, otherwise end waiting
+        if (adhocReceiveServerRequest() == 1) {
+          initMessageDialog(SCE_MSG_DIALOG_BUTTON_TYPE_YESNO, language_container[ADHOC_RECEIVE_QUESTION], adhocGetServerNickname());
+          setDialogStep(DIALOG_STEP_ADHOC_RECEIVE_QUESTION);
+        } else {
+          adhocCloseSockets();
+          sceNetCtlAdhocDisconnect();
+          setDialogStep(DIALOG_STEP_NONE);
+        }
+      }
+      
+      break;
+    }
+    
+    case DIALOG_STEP_ADHOC_RECEIVE_QUESTION:
+    {
+      if (msg_result == MESSAGE_DIALOG_RESULT_YES) {
+        int res = adhocSendServerResponse("YES");
+        if (res < 0) {
+          adhocCloseSockets();
+          sceNetCtlAdhocDisconnect();
+          errorDialog(res);
+        } else {
+          ReceiveArguments args;
+          args.file_list = &file_list;
+          args.mark_list = &mark_list;
+          args.index = base_pos + rel_pos;
+
+          initMessageDialog(MESSAGE_DIALOG_PROGRESS_BAR, language_container[RECEIVING]);
+          setDialogStep(DIALOG_STEP_ADHOC_RECEIVING);
+
+          SceUID thid = sceKernelCreateThread("receive_thread", (SceKernelThreadEntry)receive_thread, 0x40, 0x100000, 0, 0, NULL);
+          if (thid >= 0)
+            sceKernelStartThread(thid, sizeof(ReceiveArguments), &args);
+        }
+      } else if (msg_result == MESSAGE_DIALOG_RESULT_NO) {
+        adhocSendServerResponse("NO"); // Do not check result
+        
+        // Go back to searching
+        adhocCloseSockets();
+        adhocWaitingForServerRequest();
+        initMessageDialog(SCE_MSG_DIALOG_BUTTON_TYPE_CANCEL, language_container[ADHOC_RECEIVE_SEARCHING_PSVITA]);
+        setDialogStep(DIALOG_STEP_ADHOC_RECEIVE_SEARCHING);
+      }
+
+      break;
+    }
+    
+    case DIALOG_STEP_ADHOC_SENDED:
+    {
+      if (msg_result == MESSAGE_DIALOG_RESULT_FINISHED) {
+        refresh = REFRESH_MODE_NORMAL;
+        setDialogStep(DIALOG_STEP_NONE);
+      }
+      
+      break;
+    }
+    
+    case DIALOG_STEP_ADHOC_RECEIVED:
+    {
+      if (msg_result == MESSAGE_DIALOG_RESULT_FINISHED) {
+        refresh = REFRESH_MODE_NORMAL;
+        setDialogStep(DIALOG_STEP_NONE);
+      }
+      
+      break;
+    }
+    
+    case DIALOG_STEP_ADHOC_SENDING:
+    case DIALOG_STEP_ADHOC_RECEIVING:
+    {
+      if (msg_result == MESSAGE_DIALOG_RESULT_FINISHED) {
+        // Alert sockets
+        adhocAlertSockets();
+      }
+      
+      break;
+    }
   }
 
   return refresh;
@@ -1282,12 +1448,12 @@ static int fileBrowserMenuCtrl() {
   int refresh = 0;
 
   // Settings menu
-  if (pressed_buttons & SCE_CTRL_START) {
+  if (pressed_pad[PAD_START]) {
     openSettingsMenu();
   }
 
   // SELECT button
-  if (pressed_buttons & SCE_CTRL_SELECT) {
+  if (pressed_pad[PAD_SELECT]) {
     if (vitashell_config.select_button == SELECT_BUTTON_MODE_USB && sceKernelGetModel() == SCE_KERNEL_MODEL_VITA) {
       if (is_safe_mode) {
         infoDialog(language_container[EXTENDED_PERMISSIONS_REQUIRED]);
@@ -1326,14 +1492,14 @@ static int fileBrowserMenuCtrl() {
   }
 
   // QR
-  if (hold2_buttons & SCE_CTRL_LTRIGGER && hold2_buttons & SCE_CTRL_RTRIGGER && enabledQR()) {
+  if (hold_pad[PAD_LTRIGGER] && hold_pad[PAD_RTRIGGER] && enabledQR()) {
     startQR();
     initMessageDialog(MESSAGE_DIALOG_QR_CODE, language_container[QR_SCANNING]);
     setDialogStep(DIALOG_STEP_QR);
   }
   
   // Move  
-  if (hold_buttons & SCE_CTRL_UP || hold2_buttons & SCE_CTRL_LEFT_ANALOG_UP) {
+  if (hold_pad[PAD_UP] || hold2_pad[PAD_LEFT_ANALOG_UP]) {
     int old_pos = base_pos + rel_pos;
     
     if (rel_pos > 0) {
@@ -1345,7 +1511,7 @@ static int fileBrowserMenuCtrl() {
     if (old_pos != base_pos + rel_pos) {
       scroll_count = 0;
     }
-  } else if (hold_buttons & SCE_CTRL_DOWN || hold2_buttons & SCE_CTRL_LEFT_ANALOG_DOWN) {
+  } else if (hold_pad[PAD_DOWN] || hold2_pad[PAD_LEFT_ANALOG_DOWN]) {
     int old_pos = base_pos + rel_pos;
 
     if ((rel_pos + 1) < file_list.length) {
@@ -1362,7 +1528,7 @@ static int fileBrowserMenuCtrl() {
   }
 
   // Context menu trigger
-  if (pressed_buttons & SCE_CTRL_TRIANGLE) {
+  if (pressed_pad[PAD_TRIANGLE]) {
     if (getContextMenuMode() == CONTEXT_MENU_CLOSED) {
       if (dir_level > 0) {
         setContextMenu(&context_menu_main);
@@ -1379,7 +1545,7 @@ static int fileBrowserMenuCtrl() {
   // Not at 'home'
   if (dir_level > 0) {
     // Mark entry    
-    if (pressed_buttons & SCE_CTRL_SQUARE) {
+    if (pressed_pad[PAD_SQUARE]) {
       FileListEntry *file_entry = fileListGetNthEntry(&file_list, base_pos + rel_pos);
       if (file_entry && strcmp(file_entry->name, DIR_UP) != 0) {
         if (!fileListFindEntry(&mark_list, file_entry->name)) {
@@ -1391,7 +1557,7 @@ static int fileBrowserMenuCtrl() {
     }
 
     // Back
-    if (pressed_buttons & SCE_CTRL_CANCEL) {
+    if (pressed_pad[PAD_CANCEL]) {
       scroll_count = 0;
       fileListEmpty(&mark_list);
       dirUp();
@@ -1401,7 +1567,7 @@ static int fileBrowserMenuCtrl() {
   }
 
   // Handle
-  if (pressed_buttons & SCE_CTRL_ENTER) {
+  if (pressed_pad[PAD_ENTER]) {
     scroll_count = 0;
 
     fileListEmpty(&mark_list);
@@ -1523,6 +1689,8 @@ static int shellMain() {
     if (getDialogStep() != DIALOG_STEP_NONE) {
       refresh = dialogSteps();
       // scroll_count = 0;
+    } else if (getAdhocDialogStatus() != ADHOC_DIALOG_CLOSED) {
+      adhocDialogCtrl();
     } else if (getPropertyDialogStatus() != PROPERTY_DIALOG_CLOSED) {
       propertyDialogCtrl();
       scroll_count = 0;
@@ -1703,7 +1871,7 @@ static int shellMain() {
           char string[64];
           sprintf(string, "%s %s", date_string, time_string);
 
-          float x = ALIGN_RIGHT(SCREEN_WIDTH-SHELL_MARGIN_X, pgf_text_width(string));
+          float x = ALIGN_RIGHT(SCREEN_WIDTH - SHELL_MARGIN_X, pgf_text_width(string));
           pgf_draw_text(x, y, color, string);
         }
 
@@ -1718,6 +1886,9 @@ static int shellMain() {
     // Draw context menu
     drawContextMenu();
 
+    // Draw adhoc dialog
+    drawAdhocDialog();
+    
     // Draw property dialog
     drawPropertyDialog();
 
@@ -1745,7 +1916,7 @@ void ftpvita_PROM(ftpvita_client_info_t *client) {
   }
 }
 
-int main(int argc, const char *argv[]) {
+int main(int argc, const char *argv[]) {  
   // Create mutex
   sceKernelCreateLwMutex(&dialog_mutex, "dialog_mutex", 2, 0, NULL);
 
@@ -1754,7 +1925,7 @@ int main(int argc, const char *argv[]) {
 
   // No custom config, in case they are damaged or unuseable
   readPad();
-  if (current_buttons & SCE_CTRL_LTRIGGER)
+  if (current_pad[PAD_LTRIGGER])
     use_custom_config = 0;
 
   // Load settings

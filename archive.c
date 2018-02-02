@@ -18,10 +18,12 @@
 
 #include "main.h"
 #include "archive.h"
+#include "psarc.h"
 #include "file.h"
 #include "utils.h"
 #include "elf.h"
 
+static int is_psarc = 0;
 static char archive_file[MAX_PATH_LENGTH];
 static int archive_path_start = 0;
 struct archive *archive_fd = NULL;
@@ -54,7 +56,7 @@ static int file_open(struct archive *a, void *client_data) {
   if (archive_data->fd < 0)
     return ARCHIVE_FATAL;
   
-  archive_data->buffer = malloc(TRANSFER_SIZE);
+  archive_data->buffer = memalign(4096, TRANSFER_SIZE);
   archive_data->block_size = TRANSFER_SIZE;
   
   return ARCHIVE_OK;
@@ -248,12 +250,7 @@ typedef struct ArchiveFileNode {
   struct ArchiveFileNode *child;
   struct ArchiveFileNode *next;
   char *name;
-  int is_folder;
-  SceMode mode;
-  SceOff size;
-  SceDateTime ctime;
-  SceDateTime mtime;
-  SceDateTime atime;
+  SceIoStat stat;
 } ArchiveFileNode;
 
 static ArchiveFileNode *archive_root = NULL;
@@ -274,7 +271,7 @@ char *serializePathName(char *name, char **p) {
   return name;
 }
 
-ArchiveFileNode *createArchiveNode(const char *name, const struct stat *stat, int is_folder) {
+ArchiveFileNode *createArchiveNode(const char *name, SceIoStat *stat) {
   ArchiveFileNode *node = malloc(sizeof(ArchiveFileNode));
   if (!node)
     return NULL;
@@ -292,25 +289,7 @@ ArchiveFileNode *createArchiveNode(const char *name, const struct stat *stat, in
   node->child = NULL;
   node->next = NULL;
   
-  if (is_folder || stat->st_mode & S_IFDIR)
-    node->is_folder = 1;
-    
-  node->mode = node->is_folder ? SCE_S_IFDIR : SCE_S_IFREG;
-  
-  if (stat) {
-    SceDateTime time;
-    
-    node->size = stat->st_size;
-    
-    sceRtcSetTime_t(&time, stat->st_ctime);
-    convertLocalTimeToUtc(&node->ctime, &time);
-    
-    sceRtcSetTime_t(&time, stat->st_mtime);
-    convertLocalTimeToUtc(&node->mtime, &time);
-    
-    sceRtcSetTime_t(&time, stat->st_atime);
-    convertLocalTimeToUtc(&node->atime, &time);
-  }
+  memcpy(&node->stat, stat, sizeof(SceIoStat));
   
   return node;
 }
@@ -340,7 +319,7 @@ ArchiveFileNode *_findArchiveNode(ArchiveFileNode *parent, char *name, ArchiveFi
         return curr;
       
       // Is folder
-      if (curr->is_folder) {
+      if (SCE_S_ISDIR(curr->stat.st_mode)) {
         // Serialize path name
         name = serializePathName(name, &p);
         
@@ -375,7 +354,7 @@ ArchiveFileNode *findArchiveNode(const char *path) {
   return _findArchiveNode(archive_root, name, NULL, NULL, NULL, NULL);
 }
 
-int addArchiveNodeRecursive(ArchiveFileNode *parent, char *name, const struct stat *stat) {  
+int addArchiveNodeRecursive(ArchiveFileNode *parent, char *name, SceIoStat *stat) {  
   char *p = NULL;
   ArchiveFileNode *prev = NULL;
   
@@ -385,12 +364,18 @@ int addArchiveNodeRecursive(ArchiveFileNode *parent, char *name, const struct st
   ArchiveFileNode *res = _findArchiveNode(parent, name, &parent, &prev, &name, &p);
   
   // Already exist
-  // TODO: update node
-  if (res)
+  if (res) {
+    memcpy(&res->stat, stat, sizeof(SceIoStat));
     return 0;
+  }
   
   // Create new node
-  ArchiveFileNode *node = createArchiveNode(name, stat, !!p);  
+  SceIoStat node_stat;
+  memcpy(&node_stat, stat, sizeof(SceIoStat));
+  node_stat.st_mode = SCE_S_IFDIR;
+  node_stat.st_size = 0;
+  
+  ArchiveFileNode *node = createArchiveNode(name, p ? &node_stat : stat);  
   if (!parent->child) { // First child
     parent->child = node;
   } else {              // Neighbour
@@ -404,7 +389,7 @@ int addArchiveNodeRecursive(ArchiveFileNode *parent, char *name, const struct st
   return 0;
 }
 
-void addArchiveNode(const char *path, const struct stat *stat) {  
+void addArchiveNode(const char *path, SceIoStat *stat) {  
   char name[MAX_PATH_LENGTH];
   strcpy(name, path);
   addArchiveNodeRecursive(archive_root, name, stat);
@@ -414,7 +399,7 @@ void freeArchiveNodes(ArchiveFileNode *curr) {
   // Traverse
   while (curr) {
     // Enter directory
-    if (curr->is_folder) {
+    if (SCE_S_ISDIR(curr->stat.st_mode)) {
       // Traverse child entry of this directory
       freeArchiveNodes(curr->child);
     }
@@ -518,6 +503,9 @@ int archiveCheckFilesForUnsafeFself() {
 }
 
 int fileListGetArchiveEntries(FileList *list, const char *path, int sort) {
+  if (is_psarc)
+    return fileListGetPsarcEntries(list, path, sort);
+  
   int res;
 
   if (!list)
@@ -540,7 +528,7 @@ int fileListGetArchiveEntries(FileList *list, const char *path, int sort) {
   while (curr) {
     FileListEntry *entry = malloc(sizeof(FileListEntry));
     if (entry) {
-      entry->is_folder = curr->is_folder;
+      entry->is_folder = SCE_S_ISDIR(curr->stat.st_mode);
       if (entry->is_folder) {
         entry->name_length = strlen(curr->name) + 1;
         entry->name = malloc(entry->name_length + 1);
@@ -556,11 +544,11 @@ int fileListGetArchiveEntries(FileList *list, const char *path, int sort) {
         list->files++;
       }
 
-      entry->size = curr->size;
+      entry->size = curr->stat.st_size;
       
-      memcpy(&entry->ctime, (SceDateTime *)&curr->ctime, sizeof(SceDateTime));
-      memcpy(&entry->mtime, (SceDateTime *)&curr->mtime, sizeof(SceDateTime));
-      memcpy(&entry->atime, (SceDateTime *)&curr->atime, sizeof(SceDateTime));
+      memcpy(&entry->ctime, (SceDateTime *)&curr->stat.st_ctime, sizeof(SceDateTime));
+      memcpy(&entry->mtime, (SceDateTime *)&curr->stat.st_mtime, sizeof(SceDateTime));
+      memcpy(&entry->atime, (SceDateTime *)&curr->stat.st_atime, sizeof(SceDateTime));
       
       fileListAddEntry(list, entry, sort);
     }
@@ -572,7 +560,10 @@ int fileListGetArchiveEntries(FileList *list, const char *path, int sort) {
   return 0;
 }
 
-int getArchivePathInfo(const char *path, uint64_t *size, uint32_t *folders, uint32_t *files) {
+int getArchivePathInfo(const char *path, uint64_t *size, uint32_t *folders, uint32_t *files, int (* handler)(const char *path)) {
+  if (is_psarc)
+    return getPsarcPathInfo(path, size, folders, files, handler);
+  
   SceIoStat stat;
   memset(&stat, 0, sizeof(SceIoStat));
 
@@ -588,15 +579,31 @@ int getArchivePathInfo(const char *path, uint64_t *size, uint32_t *folders, uint
     FileListEntry *entry = list.head->next; // Ignore ..
 
     int i;
-    for (i = 0; i < list.length - 1; i++) {
+    for (i = 0; i < list.length - 1; i++, entry = entry->next) {
       char *new_path = malloc(strlen(path) + strlen(entry->name) + 2);
       snprintf(new_path, MAX_PATH_LENGTH - 1, "%s%s", path, entry->name);
+      
+      if (handler && handler(new_path)) {
+        free(new_path);
+        continue;
+      }
+      
+      if (entry->is_folder) {
+        int ret = getArchivePathInfo(new_path, size, folders, files, handler);
+        if (ret <= 0) {
+          free(new_path);
+          fileListEmpty(&list);
+          return ret;
+        }
+      } else {
+        if (size)
+          (*size) += entry->size;
 
-      getArchivePathInfo(new_path, size, folders, files);
+        if (files)
+          (*files)++;
+      }
 
       free(new_path);
-
-      entry = entry->next;
     }
 
     if (folders)
@@ -604,6 +611,9 @@ int getArchivePathInfo(const char *path, uint64_t *size, uint32_t *folders, uint
 
     fileListEmpty(&list);
   } else {
+    if (handler && handler(path))
+      return 1;
+    
     if (size)
       (*size) += stat.st_size;
 
@@ -611,23 +621,97 @@ int getArchivePathInfo(const char *path, uint64_t *size, uint32_t *folders, uint
       (*files)++;
   }
 
-  return 0;
+  return 1;
 }
 
-int extractArchivePath(const char *src, const char *dst, FileProcessParam *param) {
+int extractArchiveFile(const char *src_path, const char *dst_path, FileProcessParam *param) {
+  SceUID fdsrc = archiveFileOpen(src_path, SCE_O_RDONLY, 0);
+  if (fdsrc < 0)
+    return fdsrc;
+
+  SceUID fddst = sceIoOpen(dst_path, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
+  if (fddst < 0) {
+    psarcFileClose(fdsrc);
+    return fddst;
+  }
+
+  void *buf = memalign(4096, TRANSFER_SIZE);
+
+  while (1) {
+    int read = archiveFileRead(fdsrc, buf, TRANSFER_SIZE);
+
+    if (read < 0) {
+      free(buf);
+
+      sceIoClose(fddst);
+      archiveFileClose(fdsrc);
+
+      sceIoRemove(dst_path);
+
+      return read;
+    }
+
+    if (read == 0)
+      break;
+
+    int written = sceIoWrite(fddst, buf, read);
+
+    if (written < 0) {
+      free(buf);
+
+      sceIoClose(fddst);
+      archiveFileClose(fdsrc);
+
+      sceIoRemove(dst_path);
+
+      return written;
+    }
+
+    if (param) {
+      if (param->value)
+        (*param->value) += read;
+
+      if (param->SetProgress)
+        param->SetProgress(param->value ? *param->value : 0, param->max);
+
+      if (param->cancelHandler && param->cancelHandler()) {
+        free(buf);
+
+        sceIoClose(fddst);
+        archiveFileClose(fdsrc);
+
+        sceIoRemove(dst_path);
+
+        return 0;
+      }
+    }
+  }
+
+  free(buf);
+
+  sceIoClose(fddst);
+  archiveFileClose(fdsrc);
+
+  return 1;
+}
+
+int extractArchivePath(const char *src_path, const char *dst_path, FileProcessParam *param) {
+  if (is_psarc)
+    return extractPsarcPath(src_path, dst_path, param);
+  
   SceIoStat stat;
   memset(&stat, 0, sizeof(SceIoStat));
 
-  int res = archiveFileGetstat(src, &stat);
+  int res = archiveFileGetstat(src_path, &stat);
   if (res < 0)
     return res;
   
   if (SCE_S_ISDIR(stat.st_mode)) {
     FileList list;
     memset(&list, 0, sizeof(FileList));
-    fileListGetArchiveEntries(&list, src, SORT_NONE);
+    fileListGetArchiveEntries(&list, src_path, SORT_NONE);
 
-    int ret = sceIoMkdir(dst, 0777);
+    int ret = sceIoMkdir(dst_path, 0777);
     if (ret < 0 && ret != SCE_ERROR_ERRNO_EEXIST) {
       fileListEmpty(&list);
       return ret;
@@ -649,113 +733,56 @@ int extractArchivePath(const char *src, const char *dst, FileProcessParam *param
     FileListEntry *entry = list.head->next; // Ignore ..
 
     int i;
-    for (i = 0; i < list.length - 1; i++) {
-      char *src_path = malloc(strlen(src) + strlen(entry->name) + 2);
-      snprintf(src_path, MAX_PATH_LENGTH - 1, "%s%s", src, entry->name);
+    for (i = 0; i < list.length - 1; i++, entry = entry->next) {
+      char *new_src_path = malloc(strlen(src_path) + strlen(entry->name) + 2);
+      snprintf(new_src_path, MAX_PATH_LENGTH - 1, "%s%s", src_path, entry->name);
 
-      char *dst_path = malloc(strlen(dst) + strlen(entry->name) + 2);
-      snprintf(dst_path, MAX_PATH_LENGTH - 1, "%s%s", dst, entry->name);
+      char *new_dst_path = malloc(strlen(dst_path) + strlen(entry->name) + 2);
+      snprintf(new_dst_path, MAX_PATH_LENGTH - 1, "%s%s", dst_path, entry->name);
 
-      int ret = extractArchivePath(src_path, dst_path, param);
-
-      free(dst_path);
-      free(src_path);
+      int ret = 0;
+      
+      if (entry->is_folder) {
+        ret = extractArchivePath(new_src_path, new_dst_path, param);
+      } else {
+        ret = extractArchiveFile(new_src_path, new_dst_path, param);
+      }
+        
+      free(new_dst_path);
+      free(new_src_path);
 
       if (ret <= 0) {
         fileListEmpty(&list);
         return ret;
       }
-
-      entry = entry->next;
     }
 
     fileListEmpty(&list);
   } else {
-    SceUID fdsrc = archiveFileOpen(src, SCE_O_RDONLY, 0);
-    if (fdsrc < 0)
-      return fdsrc;
-
-    SceUID fddst = sceIoOpen(dst, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
-    if (fddst < 0) {
-      archiveFileClose(fdsrc);
-      return fddst;
-    }
-
-    void *buf = malloc(TRANSFER_SIZE);
-
-    uint64_t seek = 0;
-
-    while (1) {
-      int read = archiveFileRead(fdsrc, buf, TRANSFER_SIZE);
-      if (read < 0) {
-        free(buf);
-
-        sceIoClose(fddst);
-        archiveFileClose(fdsrc);
-
-        return read;
-      }
-
-      if (read == 0)
-        break;
-
-      int written = sceIoWrite(fddst, buf, read);
-
-      if (written < 0) {
-        free(buf);
-
-        sceIoClose(fddst);
-        archiveFileClose(fdsrc);
-
-        return written;
-      }
-
-      seek += written;
-
-      if (param) {
-        if (param->value)
-          (*param->value) += read;
-
-        if (param->SetProgress)
-          param->SetProgress(param->value ? *param->value : 0, param->max);
-
-        if (param->cancelHandler && param->cancelHandler()) {
-          free(buf);
-
-          sceIoClose(fddst);
-          archiveFileClose(fdsrc);
-
-          return 0;
-        }
-      }
-    }
-
-    free(buf);
-
-    sceIoClose(fddst);
-    archiveFileClose(fdsrc);
+    return extractArchiveFile(src_path, dst_path, param);
   }
 
   return 1;
 }
 
 int archiveFileGetstat(const char *file, SceIoStat *stat) {
+  if (is_psarc)
+    return psarcFileGetstat(file, stat);
+    
   ArchiveFileNode *node = findArchiveNode(file + archive_path_start);
   if (!node)
     return -1;
   
-  if (stat) {
-    stat->st_mode = node->mode;
-    stat->st_size = node->size;
-    memcpy(&stat->st_ctime, &node->ctime, sizeof(SceDateTime));
-    memcpy(&stat->st_mtime, &node->mtime, sizeof(SceDateTime));
-    memcpy(&stat->st_atime, &node->atime, sizeof(SceDateTime));
-  }
+  if (stat)
+    memcpy(stat, &node->stat, sizeof(SceIoStat));
   
   return 0;
 }
 
-int archiveFileOpen(const char *file, int flags, SceMode mode) {  
+int archiveFileOpen(const char *file, int flags, SceMode mode) {
+  if (is_psarc)
+    return psarcFileOpen(file, flags, mode);
+    
   // A file is already open
   if (archive_fd)
     return -1;
@@ -791,6 +818,9 @@ int archiveFileOpen(const char *file, int flags, SceMode mode) {
 }
 
 int archiveFileRead(SceUID fd, void *data, SceSize size) {
+  if (is_psarc)
+    return psarcFileRead(fd, data, size);
+  
   if (!archive_fd || fd != ARCHIVE_FD)
     return -1;
 
@@ -798,6 +828,9 @@ int archiveFileRead(SceUID fd, void *data, SceSize size) {
 }
 
 int archiveFileClose(SceUID fd) {
+  if (is_psarc)
+    return psarcFileClose(fd);
+  
   if (!archive_fd || fd != ARCHIVE_FD)
     return -1;
 
@@ -831,11 +864,36 @@ void archiveSetPassword(char *string) {
 }
 
 int archiveClose() {
+  if (is_psarc)
+    return psarcClose();
+  
   freeArchiveNodes(archive_root);
   return 0;
 }
 
+SceMode convert_stat_mode(mode_t mode) {
+  SceMode sce_mode = 0;
+  if (mode & S_IFDIR)
+    sce_mode |= SCE_S_IFDIR;
+  if (mode & S_IFREG)
+    sce_mode |= SCE_S_IFREG;
+  return sce_mode;
+}
+
 int archiveOpen(const char *file) {
+  // Read magic
+  uint32_t magic;
+  int read = ReadFile(file, &magic, sizeof(uint32_t));
+  if (read < 0)
+    return read;
+  
+  // PSARC file
+  is_psarc = 0;
+  if (magic == 0x52415350) {
+    is_psarc = 1;
+    return psarcOpen(file);
+  }
+  
   // Start position of the archive path
   archive_path_start = strlen(file) + 1;
   strcpy(archive_file, file);
@@ -851,7 +909,10 @@ int archiveOpen(const char *file) {
     need_password = 1;
   
   // Create archive root
-  archive_root = createArchiveNode("/", NULL, 1);
+  SceIoStat root_stat;
+  memset(&root_stat, 0, sizeof(SceIoStat));
+  root_stat.st_mode = SCE_S_IFDIR;
+  archive_root = createArchiveNode("/", &root_stat);
   
   // Traverse
   while (1) {
@@ -871,10 +932,27 @@ int archiveOpen(const char *file) {
       
     // Get entry information
     const char *name = archive_entry_pathname(archive_entry);
-    const struct stat *stat = archive_entry_stat(archive_entry);
+    
+    // File stat
+    SceIoStat stat;
+    memset(&stat, 0, sizeof(SceIoStat));
+    
+    stat.st_mode = convert_stat_mode(archive_entry_mode(archive_entry));
+    stat.st_size = archive_entry_size(archive_entry);
+    
+    SceDateTime time;
+
+    sceRtcSetTime_t(&time, archive_entry_ctime(archive_entry));
+    convertLocalTimeToUtc(&stat.st_ctime, &time);
+    
+    sceRtcSetTime_t(&time, archive_entry_mtime(archive_entry));
+    convertLocalTimeToUtc(&stat.st_mtime, &time);
+    
+    sceRtcSetTime_t(&time, archive_entry_atime(archive_entry));
+    convertLocalTimeToUtc(&stat.st_atime, &time);  
     
     // Add node
-    addArchiveNode(name, stat);
+    addArchiveNode(name, &stat);
   }
 
   archive_read_free(archive);

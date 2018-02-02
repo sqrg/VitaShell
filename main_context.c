@@ -24,6 +24,7 @@
 #include "language.h"
 #include "property_dialog.h"
 #include "message_dialog.h"
+#include "netcheck_dialog.h"
 #include "ime_dialog.h"
 #include "utils.h"
 #include "usb.h"
@@ -62,6 +63,8 @@ enum MenuMainEntrys {
   MENU_MAIN_ENTRY_PROPERTIES,
   MENU_MAIN_ENTRY_SORT_BY,
   MENU_MAIN_ENTRY_MORE,
+  MENU_MAIN_ENTRY_SEND,
+  MENU_MAIN_ENTRY_RECEIVE,
 };
 
 MenuEntry menu_main_entries[] = {
@@ -73,8 +76,10 @@ MenuEntry menu_main_entries[] = {
   { RENAME,     7, 0, CTX_INVISIBLE },
   { NEW_FOLDER, 9, 0, CTX_INVISIBLE },
   { PROPERTIES, 10, 0, CTX_INVISIBLE },
-  { SORT_BY,    12, 1, CTX_VISIBLE },
-  { MORE,       13, 1, CTX_INVISIBLE },
+  { SORT_BY,    12, CTX_FLAG_MORE, CTX_VISIBLE },
+  { MORE,       13, CTX_FLAG_MORE, CTX_INVISIBLE },
+  { SEND,       17, 0, CTX_INVISIBLE }, // CTX_FLAG_BARRIER
+  { RECEIVE,    18, 0, CTX_INVISIBLE },
 };
 
 #define N_MENU_MAIN_ENTRIES (sizeof(menu_main_entries) / sizeof(MenuEntry))
@@ -263,6 +268,9 @@ void setContextMenuMainVisibilities() {
   if (!file_entry)
     return;
 
+  // menu_main_entries[MENU_MAIN_ENTRY_SEND].flags = CTX_FLAG_BARRIER;
+  // menu_main_entries[MENU_MAIN_ENTRY_RECEIVE].flags = 0;
+  
   // Invisble entries when on '..'
   if (strcmp(file_entry->name, DIR_UP) == 0) {
     menu_main_entries[MENU_MAIN_ENTRY_MARK_UNMARK_ALL].visibility = CTX_INVISIBLE;
@@ -271,6 +279,8 @@ void setContextMenuMainVisibilities() {
     menu_main_entries[MENU_MAIN_ENTRY_DELETE].visibility = CTX_INVISIBLE;
     menu_main_entries[MENU_MAIN_ENTRY_RENAME].visibility = CTX_INVISIBLE;
     menu_main_entries[MENU_MAIN_ENTRY_PROPERTIES].visibility = CTX_INVISIBLE;
+    menu_main_entries[MENU_MAIN_ENTRY_SEND].visibility = CTX_INVISIBLE;
+    // menu_main_entries[MENU_MAIN_ENTRY_RECEIVE].flags = CTX_FLAG_BARRIER;
   }
 
   // Invisible 'Paste' if nothing is copied yet
@@ -305,6 +315,8 @@ void setContextMenuMainVisibilities() {
     menu_main_entries[MENU_MAIN_ENTRY_DELETE].visibility = CTX_INVISIBLE;
     menu_main_entries[MENU_MAIN_ENTRY_RENAME].visibility = CTX_INVISIBLE;
     menu_main_entries[MENU_MAIN_ENTRY_NEW_FOLDER].visibility = CTX_INVISIBLE;
+    menu_main_entries[MENU_MAIN_ENTRY_SEND].visibility = CTX_INVISIBLE;
+    menu_main_entries[MENU_MAIN_ENTRY_RECEIVE].visibility = CTX_INVISIBLE;
   }
 
   // Mark/Unmark all text
@@ -614,7 +626,8 @@ static int contextMenuMainEnterCallback(int sel, void *context) {
         }
 
         strcpy(copy_list.path, file_list.path);
-
+        copy_list.is_in_archive = isInArchive();
+        
         char *message;
 
         // On marked entry
@@ -737,6 +750,20 @@ static int contextMenuMainEnterCallback(int sel, void *context) {
       setContextMenu(&context_menu_sort);
       setContextMenuSortVisibilities();
       return CONTEXT_MENU_MORE_OPENING;
+    }
+    
+    case MENU_MAIN_ENTRY_SEND:
+    {
+      initNetCheckDialog(SCE_NETCHECK_DIALOG_MODE_PSP_ADHOC_JOIN, 60 * 1000 * 1000);
+      setDialogStep(DIALOG_STEP_ADHOC_SEND_NETCHECK);
+      break;
+    }
+    
+    case MENU_MAIN_ENTRY_RECEIVE:
+    {
+      initNetCheckDialog(SCE_NETCHECK_DIALOG_MODE_PSP_ADHOC_CONN, 0);
+      setDialogStep(DIALOG_STEP_ADHOC_RECEIVE_NETCHECK);
+      break;
     }
   }
 

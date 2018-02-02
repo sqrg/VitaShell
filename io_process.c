@@ -122,7 +122,7 @@ int delete_thread(SceSize args_size, DeleteArguments *args) {
   }
 
   // Update thread
-  thid = createStartUpdateThread(folders+files, 0);
+  thid = createStartUpdateThread(folders + files, 0);
 
   // Remove process
   uint64_t value = 0;
@@ -140,7 +140,7 @@ int delete_thread(SceSize args_size, DeleteArguments *args) {
     int res = removePath(path, &param);
     if (res <= 0) {
       closeWaitDialog();
-      setDialogStep(DIALOG_STEP_CANCELLED);
+      setDialogStep(DIALOG_STEP_CANCELED);
       errorDialog(res);
       goto EXIT;
     }
@@ -205,7 +205,7 @@ int copy_thread(SceSize args_size, CopyArguments *args) {
 
       if (cancelHandler()) {
         closeWaitDialog();
-        setDialogStep(DIALOG_STEP_CANCELLED);
+        setDialogStep(DIALOG_STEP_CANCELED);
         goto EXIT;
       }
 
@@ -227,7 +227,7 @@ int copy_thread(SceSize args_size, CopyArguments *args) {
       if (res < 0) {
         closeWaitDialog();
         errorDialog(res);
-        goto EXIT;
+        goto EXIT_ARCHIVE_OPEN;
       }
     }
 
@@ -242,7 +242,7 @@ int copy_thread(SceSize args_size, CopyArguments *args) {
       snprintf(src_path, MAX_PATH_LENGTH - 1, "%s%s", args->copy_list->path, copy_entry->name);
 
       if (args->copy_mode == COPY_MODE_EXTRACT) {
-        getArchivePathInfo(src_path, &size, &folders, &files);
+        getArchivePathInfo(src_path, &size, &folders, &files, NULL);
       } else {
         getPathInfo(src_path, &size, &folders, &files, NULL);
       }
@@ -276,7 +276,7 @@ int copy_thread(SceSize args_size, CopyArguments *args) {
         int res = extractArchivePath(src_path, dst_path, &param);
         if (res <= 0) {
           closeWaitDialog();
-          setDialogStep(DIALOG_STEP_CANCELLED);
+          setDialogStep(DIALOG_STEP_CANCELED);
           errorDialog(res);
           goto EXIT;
         }
@@ -284,23 +284,13 @@ int copy_thread(SceSize args_size, CopyArguments *args) {
         int res = copyPath(src_path, dst_path, &param);
         if (res <= 0) {
           closeWaitDialog();
-          setDialogStep(DIALOG_STEP_CANCELLED);
+          setDialogStep(DIALOG_STEP_CANCELED);
           errorDialog(res);
           goto EXIT;
         }
       }
 
       copy_entry = copy_entry->next;
-    }
-
-    // Close archive
-    if (args->copy_mode == COPY_MODE_EXTRACT) {
-      int res = archiveClose();
-      if (res < 0) {
-        closeWaitDialog();
-        errorDialog(res);
-        goto EXIT;
-      }
     }
 
     // Set progress to 100%
@@ -314,6 +304,11 @@ int copy_thread(SceSize args_size, CopyArguments *args) {
   }
 
 EXIT:
+  // Close archive
+  if (args->copy_mode == COPY_MODE_EXTRACT)
+    archiveClose();
+  
+EXIT_ARCHIVE_OPEN:
   if (thid >= 0)
     sceKernelWaitThreadEnd(thid, NULL, NULL);
 
@@ -565,7 +560,7 @@ int export_thread(SceSize args_size, ExportArguments *args) {
     int res = exportPath(path, &songs, &videos, &pictures, &param);
     if (res <= 0) {
       closeWaitDialog();
-      setDialogStep(DIALOG_STEP_CANCELLED);
+      setDialogStep(DIALOG_STEP_CANCELED);
       errorDialog(res);
       goto EXIT;
     }
@@ -637,9 +632,9 @@ int hash_thread(SceSize args_size, HashArguments *args) {
   uint8_t sha1out[20];
   int res = getFileSha1(args->file_path, sha1out, &param);
   if (res <= 0) {
-    // SHA1 Didn't complete successfully, or was cancelled
+    // SHA1 Didn't complete successfully, or was canceled
     closeWaitDialog();
-    setDialogStep(DIALOG_STEP_CANCELLED);
+    setDialogStep(DIALOG_STEP_CANCELED);
     errorDialog(res);
     goto EXIT;
   }

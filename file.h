@@ -29,7 +29,7 @@
 #define MAX_DIR_LEVELS 32
 
 #define DIRECTORY_SIZE (4 * 1024)
-#define TRANSFER_SIZE (64 * 1024)
+#define TRANSFER_SIZE (128 * 1024)
 
 #define HOME_PATH "home"
 #define DIR_UP ".."
@@ -91,6 +91,7 @@ typedef struct {
   char path[MAX_PATH_LENGTH];
   int files;
   int folders;
+  int is_in_archive;
 } FileList;
 
 int allocateReadFile(const char *file, void **buffer);

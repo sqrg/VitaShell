@@ -12,27 +12,9 @@ endif()
 # Project start
 project(VitaShell)
 include("${VITASDK}/share/vita.cmake" REQUIRED)
-
-
-add_subdirectory(modules/kernel)
-
-link_directories(
-  ${CMAKE_CURRENT_BINARY_DIR}/modules/kernel/vitashell_kernel_stubs
-)
-
-include_directories(
-    modules/kernel
-)
-
-add_subdirectory(modules/user)
-
-include_directories(
-    modules/user
-)
-
 set(VITA_APP_NAME "VitaShell")
 set(VITA_TITLEID  "VITASHELL")
-set(VITA_VERSION  "01.79")
+set(VITA_VERSION  "01.81")
 
 # Flags and includes
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -O3 -Wno-unused-variable -Wno-unused-but-set-variable -Wno-format-truncation -fno-lto")
@@ -40,6 +22,8 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c+ + 11 -fno-rtti -fno-exceptions")
 set(VITA_MKSFOEX_FLAGS "${VITA_MKSFOEX_FLAGS} -d PARENTAL_LEVEL=1")
 set(VITA_MAKE_FSELF_FLAGS "${VITA_MAKE_FSELF_FLAGS} -a 0x2808000000000000")
 
+include_directories(
+)
 
 link_directories(
   ${CMAKE_CURRENT_BINARY_DIR}
@@ -66,8 +50,6 @@ ENDFUNCTION()
 
 file(GLOB res_files RELATIVE
   ${CMAKE_SOURCE_DIR}
-  ${CMAKE_CURRENT_BINARY_DIR}/modules/kernel/kernel.skprx
-  ${CMAKE_CURRENT_BINARY_DIR}/modules/user/user.skprx
   resources/default/*.png
   resources/default/*.txt
   resources/electron/*.png
@@ -95,6 +77,7 @@ add_executable(VitaShell
   network_download.c
   context_menu.c
   archive.c
+  psarc.c
   photo.c
   audioplayer.c
   file.c
@@ -105,9 +88,11 @@ add_executable(VitaShell
   sqlite3.c
   coredump.c
   settings.c
+  adhoc_dialog.c
   property_dialog.c
   uncommon_dialog.c
   message_dialog.c
+  netcheck_dialog.c
   ime_dialog.c
   config.c
   theme.c
@@ -118,6 +103,7 @@ add_executable(VitaShell
   minizip/zip.c
   minizip/ioapi.c
   bm.c
+  strnatcmp.c
   audio/vita_audio.c
   audio/player.c
   audio/id3.c
@@ -136,8 +122,6 @@ add_executable(VitaShell
   libmad/synth.c
   libmad/timer.c
 )
-
-add_dependencies(VitaShell vitashell_user_stubs)
 
 target_link_libraries(VitaShell
   ftpvita
@@ -158,7 +142,7 @@ target_link_libraries(VitaShell
   crypto
   expat
   taihen_stub
-  ${CMAKE_CURRENT_BINARY_DIR}/modules/user/vitashell_user_stubs/libVitaShellUser_stub_weak.a
+  VitaShellUser_stub_weak
   SceAppMgr_stub
   SceAppUtil_stub
   SceAudio_stub
@@ -167,6 +151,7 @@ target_link_libraries(VitaShell
   SceCommonDialog_stub
   SceCtrl_stub
   SceDisplay_stub
+  SceFios2_stub
   SceGxm_stub
   SceIme_stub
   SceHttp_stub
@@ -184,6 +169,7 @@ target_link_libraries(VitaShell
   ScePgf_stub
   ScePhotoExport_stub
   ScePower_stub
+  ScePspnetAdhoc_stub
   ScePromoterUtil_stub
   SceTouch_stub
   SceUdcd_stub
@@ -209,6 +195,6 @@ add_custom_target(send
 )
 
 add_custom_target(copy
-  COMMAND cp eboot.bin H:/app/${VITA_TITLEID}/eboot.bin
+  COMMAND cp eboot.bin F:/app/${VITA_TITLEID}/eboot.bin
   DEPENDS eboot.bin
 )

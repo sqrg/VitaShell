@@ -23,6 +23,7 @@
 #include "language.h"
 #include "utils.h"
 #include "property_dialog.h"
+#include "uncommon_dialog.h"
 
 typedef struct {
   int status;
@@ -110,7 +111,11 @@ static int info_thread(SceSize args_size, InfoArguments *args) {
   uint32_t folders = 0, files = 0;
 
   info_done = 0;
-  getPathInfo(args->path, &size, &folders, &files, propertyCancelHandler);
+  if (isInArchive()) {
+    getArchivePathInfo(args->path, &size, &folders, &files, propertyCancelHandler);
+  } else {
+    getPathInfo(args->path, &size, &folders, &files, propertyCancelHandler);
+  }
   info_done = 1;
 
   if (folders > 0)
@@ -265,23 +270,18 @@ int initPropertyDialog(char *path, FileListEntry *entry) {
 
   // Size & contains
   if (entry->is_folder) {
-    if (isInArchive()) {
-      property_entries[PROPERTY_ENTRY_SIZE].visibility = PROPERTY_ENTRY_INVISIBLE;
-      property_entries[PROPERTY_ENTRY_CONTAINS].visibility = PROPERTY_ENTRY_INVISIBLE;
-    } else {
-      strcpy(property_size, "...");
-      strcpy(property_contains, "...");
+    strcpy(property_size, "...");
+    strcpy(property_contains, "...");
 
-      // Info thread
-      InfoArguments info_args;
-      info_args.path = path;
+    // Info thread
+    InfoArguments info_args;
+    info_args.path = path;
 
-      info_thid = sceKernelCreateThread("info_thread", (SceKernelThreadEntry)info_thread, 0x10000100, 0x100000, 0, 0, NULL);
-      if (info_thid >= 0)
-        sceKernelStartThread(info_thid, sizeof(InfoArguments), &info_args);
-      
-      property_entries[PROPERTY_ENTRY_CONTAINS].visibility = PROPERTY_ENTRY_VISIBLE;
-    }
+    info_thid = sceKernelCreateThread("info_thread", (SceKernelThreadEntry)info_thread, 0x10000100, 0x100000, 0, 0, NULL);
+    if (info_thid >= 0)
+      sceKernelStartThread(info_thid, sizeof(InfoArguments), &info_args);
+    
+    property_entries[PROPERTY_ENTRY_CONTAINS].visibility = PROPERTY_ENTRY_VISIBLE;
 
     // property_entries[PROPERTY_ENTRY_COMPRESSED_SIZE].visibility = PROPERTY_ENTRY_INVISIBLE;
   } else {
@@ -352,7 +352,7 @@ int initPropertyDialog(char *path, FileListEntry *entry) {
 }
 
 void propertyDialogCtrl() {
-  if (pressed_buttons & SCE_CTRL_ENTER) {
+  if (pressed_pad[PAD_ENTER]) {
     info_done = 1;
     sceKernelWaitThreadEnd(info_thid, NULL, NULL);
     property_dialog.status = PROPERTY_DIALOG_CLOSING;
@@ -458,7 +458,7 @@ void drawPropertyDialog() {
         string_y += FONT_Y_SPACE;
     }
 
-    char button_string[32];
+    char button_string[128];
     sprintf(button_string, "%s %s", enter_button == SCE_SYSTEM_PARAM_ENTER_BUTTON_CIRCLE ? CIRCLE : CROSS, language_container[OK]);
     pgf_draw_text(ALIGN_CENTER(SCREEN_WIDTH, pgf_text_width(button_string)), string_y + FONT_Y_SPACE, DIALOG_COLOR, button_string);
   }

@@ -16,27 +16,22 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef __PROPERTY_DIALOG_H__
-#define __PROPERTY_DIALOG_H__
+#ifndef __PSARC_H__
+#define __PSARC_H__
 
 #include "file.h"
 
-enum PropertyEntryVisibilities {
-  PROPERTY_ENTRY_UNUSED,
-  PROPERTY_ENTRY_INVISIBLE,
-  PROPERTY_ENTRY_VISIBLE,
-};
+int fileListGetPsarcEntries(FileList *list, const char *path, int sort);
 
-enum PropertyDialogStatus {
-  PROPERTY_DIALOG_CLOSED,
-  PROPERTY_DIALOG_CLOSING,
-  PROPERTY_DIALOG_OPENED,
-  PROPERTY_DIALOG_OPENING,
-};
+int getPsarcPathInfo(const char *path, uint64_t *size, uint32_t *folders, uint32_t *files, int (* handler)(const char *path));
+int extractPsarcPath(const char *src_path, const char *dst_path, FileProcessParam *param);
 
-int getPropertyDialogStatus();
-int initPropertyDialog(char *path, FileListEntry *entry);
-void propertyDialogCtrl();
-void drawPropertyDialog();
+int psarcFileGetstat(const char *file, SceIoStat *stat);
+int psarcFileOpen(const char *file, int flags, SceMode mode);
+int psarcFileRead(SceUID fd, void *data, SceSize size);
+int psarcFileClose(SceUID fd);
+
+int psarcClose();
+int psarcOpen(const char *file);
 
 #endif

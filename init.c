@@ -175,11 +175,6 @@ static void initSceAppUtil() {
   sceAppUtilSystemParamGetInt(SCE_SYSTEM_PARAM_ID_DATE_FORMAT, &date_format);
   sceAppUtilSystemParamGetInt(SCE_SYSTEM_PARAM_ID_TIME_FORMAT, &time_format);
 
-  if (enter_button == SCE_SYSTEM_PARAM_ENTER_BUTTON_CIRCLE) {
-    SCE_CTRL_ENTER = SCE_CTRL_CIRCLE;
-    SCE_CTRL_CANCEL = SCE_CTRL_CROSS;
-  }
-
   // Set common dialog config
   SceCommonDialogConfigParam config;
   sceCommonDialogConfigParamInit(&config);
@@ -263,12 +258,16 @@ static int finishSQLite() {
   return sqlite_exit();
 }
 
+#define NET_MEMORY_SIZE (4 * 1024 * 1024)
+
+static char *net_memory = NULL;
+
 static void initNet() {
-  static char memory[16 * 1024];
+  net_memory = malloc(NET_MEMORY_SIZE);
 
   SceNetInitParam param;
-  param.memory = memory;
-  param.size = sizeof(memory);
+  param.memory = net_memory;
+  param.size = NET_MEMORY_SIZE;
   param.flags = 0;
 
   sceNetInit(&param);
@@ -278,13 +277,24 @@ static void initNet() {
   sceHttpInit(40 * 1024);
 
   sceHttpsDisableOption(SCE_HTTPS_FLAG_SERVER_VERIFY);
+
+  sceNetAdhocInit();
+
+  SceNetAdhocctlAdhocId adhocId;
+  memset(&adhocId, 0, sizeof(SceNetAdhocctlAdhocId));
+  adhocId.type = SCE_NET_ADHOCCTL_ADHOCTYPE_RESERVED;
+  memcpy(&adhocId.data[0], VITASHELL_TITLEID, SCE_NET_ADHOCCTL_ADHOCID_LEN);
+  sceNetAdhocctlInit(&adhocId);
 }
 
 static void finishNet() {
+  sceNetAdhocctlTerm();
+  sceNetAdhocTerm();
   sceSslTerm();
   sceHttpTerm();
   sceNetCtlTerm();
-  sceNetTerm();  
+  sceNetTerm();
+  free(net_memory);
 }
 
 void installDefaultFiles() {
@@ -343,6 +353,7 @@ void initVitaShell() {
   sceSysmoduleLoadModule(SCE_SYSMODULE_PHOTO_EXPORT);
   sceSysmoduleLoadModule(SCE_SYSMODULE_NET);
   sceSysmoduleLoadModule(SCE_SYSMODULE_HTTPS);
+  sceSysmoduleLoadModule(SCE_SYSMODULE_PSPNET_ADHOC);
   sceSysmoduleLoadModule(SCE_SYSMODULE_SQLITE);
 
   // Init
@@ -380,6 +391,8 @@ void finishVitaShell() {
   vitaAudioShutdown();
   
   // Unload modules
+  sceSysmoduleUnloadModule(SCE_SYSMODULE_SQLITE);
+  sceSysmoduleUnloadModule(SCE_SYSMODULE_PSPNET_ADHOC);
   sceSysmoduleUnloadModule(SCE_SYSMODULE_HTTPS);
   sceSysmoduleUnloadModule(SCE_SYSMODULE_NET);
   sceSysmoduleUnloadModule(SCE_SYSMODULE_PHOTO_EXPORT);

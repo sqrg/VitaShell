@@ -23,6 +23,8 @@ EXTRACTING                           = "Extracting..."
 COMPRESSING                          = "Compressing..."
 HASHING                              = "Hashing..."
 REFRESHING                           = "Refreshing..."
+SENDING                              = "Sending..."
+RECEIVING                            = "Receiving..."
 
 # Audio player strings
 TITLE                                = "Title"
@@ -40,7 +42,7 @@ EDIT_LINE                            = "Edit line"
 ENTER_SEARCH_TERM                    = "Enter search term"
 
 # Context menu strings
-REFRESH_LIVEAREA                     = "Refresh livearea"
+REFRESH_LIVEAREA                     = "Refresh LiveArea™"
 REFRESH_LICENSE_DB                   = "Refresh license database"
 MOUNT_UMA0                           = "Mount uma0:"
 MOUNT_IMC0                           = "Mount imc0:"
@@ -59,6 +61,8 @@ DELETE                               = "Delete"
 RENAME                               = "Rename"
 NEW_FOLDER                           = "New folder"
 PROPERTIES                           = "Properties"
+SEND                                 = "Send"
+RECEIVE                              = "Receive"
 MORE                                 = "More"
 COMPRESS                             = "Compress"
 INSTALL_ALL                          = "Install all"
@@ -77,7 +81,7 @@ PROPERTY_FSELF_MODE                  = "FSELF mode"
 PROPERTY_SIZE                        = "Size"
 PROPERTY_COMPRESSED_SIZE             = "Compressed size"
 PROPERTY_CONTAINS                    = "Contains"
-PROPERTY_CONTAINS_FILES_FOLDERS      = "%d files / %d folders"
+PROPERTY_CONTAINS_FILES_FOLDERS      = "%d files, %d folders"
 PROPERTY_CREATION_DATE               = "Creation date"
 PROPERTY_MODFICATION_DATE            = "Modification date"
 PROPERTY_TYPE_ARCHIVE                = "Archive"
@@ -125,7 +129,7 @@ INSTALL_WARNING                      = "This package requests extended permissio
 INSTALL_BRICK_WARNING                = "This package uses functions that remounts\partitions and can potentially brick your device.\If you did not obtain it from a trusted source,\please proceed at your own caution.\\Would you like to continue the install?"
 HASH_FILE_QUESTION                   = "SHA1 hashing may take a long time. Continue?"
 SAVE_MODIFICATIONS                   = "Do you want to save your modifications?"
-REFRESH_LIVEAREA_QUESTION            = "Refreshing the livearea may take a long time. Continue?"
+REFRESH_LIVEAREA_QUESTION            = "Refreshing the LiveArea™ may take a long time. Continue?"
 REFRESH_LICENSE_DB_QUESTION          = "Refreshing the license database may take a long time. Continue?"
 
 # HENkaku settings strings
@@ -169,11 +173,17 @@ USB_CONNECTION_NOT_AVAILABLE         = "USB connection is not available on this 
 USB_WAIT_ATTACH                      = "Please attach an USB flash drive to continue.\If it has already been attached, please detach\and reattach it."
 
 # QR strings
-QR_SCANNING                         = "Scanning for QR Codes..."
-QR_OPEN_WEBSITE                     = "Do you want to open this URL:\%s"
-QR_SHOW_CONTENTS                    = "QR Code Says:\%s"
-QR_CONFIRM_INSTALL                  = "Do you want to install this package:\%s\File: %s\Size: %s"
-QR_CONFIRM_DOWNLOAD                 = "Do you want to download this file:\%s\File: %s\Size: %s"
+QR_SCANNING                          = "Scanning for QR Codes..."
+QR_OPEN_WEBSITE                      = "Do you want to open this URL:\%s"
+QR_SHOW_CONTENTS                     = "QR Code Says:\%s"
+QR_CONFIRM_INSTALL                   = "Do you want to install this package:\%s\File: %s\Size: %s"
+QR_CONFIRM_DOWNLOAD                  = "Do you want to download this file:\%s\File: %s\Size: %s"
+
+# Adhoc strings
+ADHOC_RECEIVE_SEARCHING_PSVITA       = "Searching for a PS Vita to receive from...\Please wait."
+ADHOC_SELECT_PSVITA                  = "Select a PS Vita:"
+ADHOC_RECEIVE_QUESTION               = "Do you want to receive from %s?"
+ADHOC_CLIENT_DECLINED                = "The client has declined your request."
 
 # Others
 IMC0_MOUNTED                         = "imc0: mounted."
